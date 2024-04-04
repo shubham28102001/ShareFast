@@ -1,0 +1,736 @@
+Parameters:
+  Prefix:
+    Type: String
+    Default: share-fast
+
+  UploadLambdaFunction:
+    Type: String
+    Default: upload-file
+
+  DownloadLambdaFunction:
+    Type: String
+    Default: download-file
+
+  DeleteLambdaFunction:
+    Type: String
+    Default: delete-file
+
+  InsertDBLambdaFunction:
+    Type: String
+    Default: insert-db
+
+  BucketName:
+    Type: String
+    Default: 'share-fast-bucket'
+
+  ApiName:
+    Type: String
+    Default: share-fast-api
+  
+  EnvironmentName:
+    Type: String
+    Default: prod
+  
+  DynamoDBTableName:
+    Type: String
+    Default: 'share-fast-db'
+
+  InstanceType:
+    Description: Select instance type
+    Type: String
+    Default: t2.small
+    AllowedValues:
+        - t2.small
+        - t2.micro
+        - m1.large
+        - m1.small
+    Description: Default is t2.small. Enter t2.micro, m1.large or m1.small.
+
+  KeyName:
+    Default: share-fast
+    Description: Existing Key Pair for EC2 to enable SSH access.
+    Type: AWS::EC2::KeyPair::KeyName
+  
+  GitHubLink:
+    Default: "https://github.com/shubham28102001/ShareFast.git"
+    Type: String
+
+Resources:
+
+  UserPool:
+    Type: 'AWS::Cognito::UserPool'
+    Properties:
+      UserPoolName: !Sub ${Prefix}-UserPool
+      UsernameAttributes: 
+        - email
+      AutoVerifiedAttributes:
+        - email
+      UsernameConfiguration:
+        CaseSensitive: true
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+      VerificationMessageTemplate:
+        DefaultEmailOption: CONFIRM_WITH_LINK
+        EmailMessageByLink: 'Click the Verify Email link to verify your email address to Sign Up for Share Fast. {##Verify Email##}'
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      AccessTokenValidity: 1
+      SupportedIdentityProviders:
+        - COGNITO
+      TokenValidityUnits: days
+      TokenValidityUnits:
+        AccessToken: days
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref Prefix
+      UserPoolId: !Ref UserPool
+  
+  CognitoAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties:
+      Name: CognitoAuthorizer
+      IdentitySource: method.request.header.authorization
+      Type: COGNITO_USER_POOLS
+      RestApiId: !Ref APIGatewayRestApi
+      ProviderARNs:
+        - Fn::GetAtt:
+            - UserPool
+            - Arn
+      
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref DynamoDBTableName
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      AttributeDefinitions:
+        -
+          AttributeName: "file_key"
+          AttributeType: "S"
+          
+      KeySchema:
+        -
+          AttributeName: "file_key"
+          KeyType: "HASH"
+
+  APIGatewayRestApi:
+    Type: "AWS::ApiGateway::RestApi"
+    Properties:
+      Name:
+        Ref: ApiName
+        
+  APIGatewayResourceUpload:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      ParentId: !GetAtt
+        - APIGatewayRestApi
+        - RootResourceId
+      RestApiId: !Ref APIGatewayRestApi
+      PathPart:
+        Ref: UploadLambdaFunction
+    DependsOn:
+      - APIGatewayRestApi
+
+  APIGatewayMethodUpload:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      HttpMethod: POST
+      ResourceId: !Ref APIGatewayResourceUpload
+      AuthorizerId: !Ref CognitoAuthorizer
+      RestApiId: !Ref APIGatewayRestApi
+      AuthorizationType: COGNITO_USER_POOLS
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: "'*'" 
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        Uri: !Sub
+          - >-
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFuncNameArn}/invocations
+          - LambdaFuncNameArn: !GetAtt LambdaFunctionUpload.Arn
+    DependsOn:
+      - APIGatewayResourceUpload
+
+  APIGatewayResourceUploadOptions:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId: !Ref APIGatewayResourceUpload
+      RestApiId: !Ref APIGatewayRestApi
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+        RequestTemplates:
+          application/json: "{\"statusCode\": 200}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+    DependsOn:
+      - APIGatewayMethodUpload
+
+  APIGatewayResourceDownload:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      ParentId: !GetAtt
+        - APIGatewayRestApi
+        - RootResourceId
+      RestApiId: !Ref APIGatewayRestApi
+      PathPart:
+        Ref: DownloadLambdaFunction
+    DependsOn:
+      - APIGatewayRestApi
+      
+  APIGatewayMethodDownload:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      HttpMethod: GET
+      ResourceId: !Ref APIGatewayResourceDownload
+      AuthorizerId: !Ref CognitoAuthorizer
+      RestApiId: !Ref APIGatewayRestApi
+      AuthorizationType: COGNITO_USER_POOLS
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: "'*'" 
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        Uri: !Sub
+          - >-
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFuncNameArn}/invocations
+          - LambdaFuncNameArn: !GetAtt LambdaFunctionDownload.Arn
+    DependsOn:
+      - APIGatewayResourceDownload
+
+  APIGatewayResourceDownloadOptions:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId: !Ref APIGatewayResourceDownload
+      RestApiId: !Ref APIGatewayRestApi
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: "{\"statusCode\": 200}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+    DependsOn:
+      - APIGatewayMethodDownload
+
+  APIGatewayDeployment:
+    Type: "AWS::ApiGateway::Deployment"
+    Properties:
+      StageName:
+        Ref: EnvironmentName
+      RestApiId: !Ref APIGatewayRestApi
+    DependsOn:
+      - APIGatewayResourceUploadOptions
+      - APIGatewayResourceDownloadOptions
+
+  LambdaFunctionUpload:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Role: "arn:aws:iam::654654284682:role/LabRole"
+      Runtime: "python3.8"
+      Description: Created by ShareFast Cloud Formation file.
+      Timeout: 300
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          from botocore.exceptions import ClientError
+          from botocore.client import Config
+          import uuid
+          import os
+
+          BUCKET_NAME = os.environ['BUCKET_NAME']
+
+          def lambda_handler(event, context):
+
+              s3_client = boto3.client("s3", config=Config(signature_version="s3v4"))
+              fileName = event["fileName"]
+              randomFileName = "".join([str(uuid.uuid4().hex[:6]), fileName])
+              key = "files/" + randomFileName
+
+              response = s3_client.generate_presigned_url(
+                  ClientMethod="put_object", Params={"Bucket": BUCKET_NAME, "Key": key}
+              )
+
+              json_response = {"file_upload_url": response, "key": key}
+
+              return {
+                  "statusCode": 200,
+                  "headers": {
+                    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "OPTIONS,POST,GET,PUT,DELETE",
+                  },
+                  "body": json_response
+              }
+      Handler: index.lambda_handler
+      FunctionName:
+        Ref: UploadLambdaFunction
+      Environment:
+        Variables:
+          DYNAMO_DB_NAME: !Ref DynamoDBTableName
+          BUCKET_NAME: !Ref BucketName
+      TracingConfig:
+        Mode: Active
+    DependsOn:
+      - APIGatewayRestApi
+
+  LambdaFunctionDownload:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Role: "arn:aws:iam::654654284682:role/LabRole"
+      Runtime: "python3.8"
+      Description: Created by ShareFast Cloud Formation file.
+      Timeout: 300
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          from botocore.exceptions import ClientError
+          import os
+
+          TABLE_NAME = os.environ['DYNAMO_DB_NAME']
+          
+          dynamodb_client = boto3.resource('dynamodb')
+          table = dynamodb_client.Table(TABLE_NAME)
+
+          def lambda_handler(event, context):
+              fileKey = event['queryStringParameters']['key'][6:]
+              
+              json_response = {"url": "", "file_name": "", "is_deleted": "", "record_exists": "", "message": "", "success": ""}
+              
+              try:
+                  response = table.get_item(TableName=TABLE_NAME, Key={'file_key': fileKey})
+                  if 'Item' in response:
+                      if (response['Item']['isDeleted'] == True):
+                          json_response['url'] = 'null'
+                          json_response['file_name'] = 'null'
+                          json_response['message'] = 'File has been deleted'
+                          json_response['success'] = 'true'
+                          json_response['is_deleted'] = 'true'
+                          json_response['record_exists'] = 'true'
+                      else:
+                          json_response['url'] = response['Item']['file_url']
+                          json_response['file_name'] = response['Item']['file_name']
+                          json_response['message'] = 'Successfully fetched file url'
+                          json_response['success'] = 'true'
+                          json_response['is_deleted'] = 'false'
+                          json_response['record_exists'] = 'true'
+                  else:
+                      json_response['url'] = 'null'
+                      json_response['file_name'] = 'null'
+                      json_response['message'] = 'Invalid key'
+                      json_response['success'] = 'true'
+                      json_response['is_deleted'] = 'false'
+                      json_response['record_exists'] = 'false'
+              except ClientError as e:
+                  json_response['url'] = 'null'
+                  json_response['file_name'] = 'null'
+                  json_response['message'] = 'Error while fetching url from database'
+                  json_response['success'] = 'false'
+                  json_response['is_deleted'] = 'false'
+                  json_response['record_exists'] = 'false'
+                  return {
+                      'statusCode': 200,
+                      "headers": {
+                        "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "OPTIONS,POST,GET,PUT,DELETE",
+                      },
+                      'body': json.dumps(json_response)
+                  }
+              
+              return {
+                  'statusCode': 200,
+                  "headers": {
+                    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "OPTIONS,POST,GET,PUT,DELETE",
+                  },
+                  'body': json.dumps(json_response)
+              }
+      Handler: index.lambda_handler
+      FunctionName:
+        Ref: DownloadLambdaFunction
+      Environment:
+        Variables:
+          DYNAMO_DB_NAME: !Ref DynamoDBTableName
+          BUCKET_NAME: !Ref BucketName
+      TracingConfig:
+        Mode: Active
+    DependsOn:
+      - APIGatewayRestApi
+
+  LambdaFunctionInsertDB:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Role: "arn:aws:iam::654654284682:role/LabRole"
+      Runtime: "python3.8"
+      Description: Created by ShareFast Cloud Formation file.
+      Timeout: 300
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          from botocore.exceptions import ClientError
+          import uuid
+          import logging
+          import datetime
+          import os
+
+          TABLE_NAME = os.environ['DYNAMO_DB_NAME']
+          BUCKET_NAME = os.environ['BUCKET_NAME']
+
+          s3_client = boto3.client("s3")
+          dynamodb_client = boto3.resource("dynamodb")
+          table = dynamodb_client.Table(TABLE_NAME)
+
+
+          def lambda_handler(event, context):
+              bucketName = event["Records"][0]["s3"]["bucket"]["name"]
+              key = event["Records"][0]["s3"]["object"]["key"]
+              fileName = key[12:]
+
+              currentTime = datetime.datetime.now(datetime.timezone.utc).strftime(
+                  "%Y-%m-%dT%H:%M:%S.%f%Z"
+              )
+
+              json_response = {"url": "", "key": "", "message": "", "success": ""}
+
+              try:
+                  json_response["url"] = s3_client.generate_presigned_url(
+                      "get_object",
+                      Params={
+                          "Bucket": bucketName,
+                          "Key": key,
+                          "ResponseContentDisposition": "attachment; filename=" + fileName,
+                      },
+                  )
+                  json_response["message"] = "File successfully uploaded"
+                  json_response["success"] = "true"
+                  json_response["key"] = key
+              except ClientError as e:
+                  json_response["url"] = "null"
+                  json_response["message"] = "Error while generating presigneed url"
+                  json_response["success"] = "false"
+                  json_response["key"] = "null"
+                  logging.error(e)
+
+                  return {
+                      "statusCode": 200,
+                      "headers": {
+                        "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "OPTIONS,POST,GET,PUT,DELETE",
+                      },
+                      "body": json.dumps(json_response),
+                  }
+
+              try:
+                  response = table.put_item(
+                      Item={
+                          "file_key": key[6:],
+                          "file_name": fileName,
+                          "file_url": json_response["url"],
+                          "uploadTime": currentTime,
+                          "isDeleted": False,
+                      }
+                  )
+                  json_response[
+                      "message"
+                  ] = "File uploaded and data inserted to database successfully"
+              except ClientError as e:
+                  json_response["message"] = "Error while inserting data into database"
+                  json_response["success"] = "false"
+                  logging.error(e)
+
+                  return {
+                      "statusCode": 200,
+                      "headers": {
+                        "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "OPTIONS,POST,GET,PUT,DELETE",
+                      },
+                      "body": json.dumps(json_response),
+                  }
+
+              return {
+                  "statusCode": 200,
+                  "headers": {
+                    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "OPTIONS,POST,GET,PUT,DELETE",
+                  },
+                  "body": json.dumps(json_response),
+              }
+      Handler: index.lambda_handler
+      FunctionName:
+        Ref: InsertDBLambdaFunction
+      Environment:
+        Variables:
+          DYNAMO_DB_NAME: !Ref DynamoDBTableName
+          BUCKET_NAME: !Ref BucketName
+      TracingConfig:
+        Mode: Active
+    DependsOn:
+      - APIGatewayRestApi
+
+  LambdaFunctionDelete:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Role: "arn:aws:iam::654654284682:role/LabRole"
+      Runtime: "python3.8"
+      Description: Created by ShareFast Cloud Formation file.
+      Timeout: 300
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          from botocore.exceptions import ClientError
+          from datetime import datetime, timezone
+          import os
+
+          TABLE_NAME = os.environ['DYNAMO_DB_NAME']
+          BUCKET_NAME = os.environ['BUCKET_NAME']
+
+          s3_resource = boto3.resource('s3')
+          bucket = s3_resource.Bucket(BUCKET_NAME)
+
+          dynamodb_client = boto3.resource('dynamodb')
+          table = dynamodb_client.Table(TABLE_NAME)
+
+          time_now = datetime.now(timezone.utc)
+
+          def lambda_handler(event, context):
+              objects = bucket.objects.filter(Prefix = 'files/')
+              
+              for obj in objects:
+                  last_modified = obj.last_modified
+                  
+                  seconds_passed = (time_now-last_modified).total_seconds()
+
+                  print("Lifetime of file {} is {} seconds.".format(obj.key, seconds_passed))
+                  
+                  if seconds_passed >= 1800:
+                      try:
+                          table.update_item(
+                              Key={'file_key': obj.key[6:]}, 
+                              UpdateExpression='SET #field1 = :field1, #field2 = :field2',
+                              ExpressionAttributeNames={
+                              '#field1': 'isDeleted',
+                              '#field2': 'file_url',
+                              },
+                              ExpressionAttributeValues={
+                                  ':field1': True,
+                                  ':field2': 'null',
+                              })
+                          print("Deleting {} ".format(obj.key))
+                          obj.delete()
+
+                      except ClientError as e:
+                          return {
+                              'statusCode': 200,
+                              'body': json.dumps('Error while deleting object from s3')
+                          }
+              
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps('Delete Completed.')
+              }
+      Handler: index.lambda_handler
+      FunctionName:
+        Ref: DeleteLambdaFunction
+      Environment:
+        Variables:
+          DYNAMO_DB_NAME: !Ref DynamoDBTableName
+          BUCKET_NAME: !Ref BucketName
+      TracingConfig:
+        Mode: Active
+    DependsOn:
+      - APIGatewayRestApi
+
+  APIGatewayPermissionUpload:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Principal: apigateway.amazonaws.com
+      FunctionName: !GetAtt LambdaFunctionUpload.Arn
+      Action: "lambda:InvokeFunction"
+    DependsOn:
+      - APIGatewayDeployment
+
+  APIGatewayPermissionDownload:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Principal: apigateway.amazonaws.com
+      FunctionName: !GetAtt LambdaFunctionDownload.Arn
+      Action: "lambda:InvokeFunction"
+    DependsOn:
+      - APIGatewayDeployment
+  
+  DeleteScheduler:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: 'send-file-scheduler'
+      ScheduleExpression: 'rate(20 minute)'
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: !GetAtt LambdaFunctionDelete.Arn
+        RoleArn: "arn:aws:iam::654654284682:role/LabRole"
+
+  Bucket:
+    Type: AWS::S3::Bucket
+    DependsOn:
+      - BucketPermissionAccess
+    Properties:
+      BucketName: !Ref BucketName
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+            - '*'
+            AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+              - POST
+              - PUT
+              - HEAD
+            MaxAge: 3000
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt LambdaFunctionInsertDB.Arn
+  
+  BucketPermissionAccess:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      Principal: s3.amazonaws.com
+      FunctionName: !GetAtt LambdaFunctionInsertDB.Arn
+      SourceArn: !Sub 'arn:aws:s3:::${BucketName}'
+      SourceAccount: !Ref AWS::AccountId
+
+  InstanceSecurityGroupPort:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties: 
+      GroupDescription: Allow HTTPS access through port 3000
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+          FromPort: 3000
+          ToPort: 3000
+  
+  InstanceSecurityGroupSSH:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties: 
+      GroupDescription: Allow SSH access through port 22
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+          FromPort: 22
+          ToPort: 22
+  
+  InstanceSecurityGroupHTTP:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties: 
+      GroupDescription: Allow HTTP access through port 80
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+          FromPort: 80
+          ToPort: 80
+
+  EC2Instance: 
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref 'KeyName'
+      ImageId: ami-06e46074ae430fba6
+      SecurityGroups: 
+        - !Ref InstanceSecurityGroupPort
+        - !Ref InstanceSecurityGroupSSH
+        - !Ref InstanceSecurityGroupHTTP
+
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash
+            sudo su
+            yum install git -y
+            git clone ${GitHubLink}
+            cd send-file/
+            rm .env
+            echo "REACT_APP_API_LINK=\"https://${APIGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}/\"" > .env
+            echo "REACT_APP_CLIENT_ID=${UserPoolClient}" >> .env
+            echo "REACT_APP_USER_POOL_ID=${UserPool}" >> .env
+            yum install nodejs -y
+            yum install npm -y
+            npm install
+            npm run start&
+      Tags:
+        - Key: Name
+          Value: share-fast-application
+ 
+Outputs:
+  ApplicationURL:
+    Description: The URL of the deployed application
+    Value: !Join
+      - ''
+      - - 'http://'
+        - !GetAtt
+          - EC2Instance
+          - PublicDnsName
+        - ':3000'
+
+  AppClientID:
+    Value: !Ref UserPoolClient
+    Description: ShareFast App Client ID
+  
+  UserPoolID:
+    Value: !Ref UserPool
+    Description: ShareFast UserPool ID
