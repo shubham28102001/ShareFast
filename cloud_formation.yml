@@ -615,7 +615,7 @@ Resources:
   DeleteScheduler:
     Type: AWS::Scheduler::Schedule
     Properties:
-      Name: 'send-file-scheduler'
+      Name: 'share-fast-scheduler'
       ScheduleExpression: 'rate(20 minute)'
       FlexibleTimeWindow:
         Mode: 'OFF'
@@ -703,7 +703,7 @@ Resources:
             sudo su
             yum install git -y
             git clone ${GitHubLink}
-            cd send-file/
+            cd ShareFast/
             rm .env
             echo "REACT_APP_API_LINK=\"https://${APIGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}/\"" > .env
             echo "REACT_APP_CLIENT_ID=${UserPoolClient}" >> .env
