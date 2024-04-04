@@ -1,40 +1,50 @@
 Parameters:
+  # Prefix for resource names
   Prefix:
     Type: String
     Default: share-fast
 
+  # Name of Lambda function for uploading files
   UploadLambdaFunction:
     Type: String
     Default: upload-file
 
+  # Name of Lambda function for downloading files
   DownloadLambdaFunction:
     Type: String
     Default: download-file
 
+  # Name of Lambda function for deleting files
   DeleteLambdaFunction:
     Type: String
     Default: delete-file
 
+  # Name of Lambda function for inserting into DynamoDB
   InsertDBLambdaFunction:
     Type: String
     Default: insert-db
 
+  # Name of S3 bucket
   BucketName:
     Type: String
     Default: 'share-fast-bucket'
 
+  # Name of API Gateway
   ApiName:
     Type: String
     Default: share-fast-api
   
+  # Name of environment
   EnvironmentName:
     Type: String
     Default: prod
   
+  # Name of DynamoDB table
   DynamoDBTableName:
     Type: String
     Default: 'share-fast-db'
 
+  # EC2 instance type
   InstanceType:
     Description: Select instance type
     Type: String
@@ -46,17 +56,19 @@ Parameters:
         - m1.small
     Description: Default is t2.small. Enter t2.micro, m1.large or m1.small.
 
+  # Name of existing Key Pair for EC2
   KeyName:
     Default: share-fast
     Description: Existing Key Pair for EC2 to enable SSH access.
     Type: AWS::EC2::KeyPair::KeyName
   
+  # Link to GitHub repository
   GitHubLink:
     Default: "https://github.com/shubham28102001/ShareFast.git"
     Type: String
 
 Resources:
-
+  # Cognito User Pool for user authentication
   UserPool:
     Type: 'AWS::Cognito::UserPool'
     Properties:
@@ -76,6 +88,7 @@ Resources:
         DefaultEmailOption: CONFIRM_WITH_LINK
         EmailMessageByLink: 'Click the Verify Email link to verify your email address to Sign Up for Share Fast. {##Verify Email##}'
 
+  # Client for accessing the Cognito User Pool
   UserPoolClient:
     Type: AWS::Cognito::UserPoolClient
     Properties:
@@ -87,12 +100,14 @@ Resources:
       TokenValidityUnits:
         AccessToken: days
 
+  # Domain setup for the Cognito User Pool
   UserPoolDomain:
     Type: AWS::Cognito::UserPoolDomain
     Properties:
       Domain: !Ref Prefix
       UserPoolId: !Ref UserPool
   
+  # Authorizer for API Gateway using Cognito User Pool
   CognitoAuthorizer:
     Type: AWS::ApiGateway::Authorizer
     Properties:
@@ -105,6 +120,7 @@ Resources:
             - UserPool
             - Arn
       
+  # DynamoDB table for storing data
   DynamoDBTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -116,18 +132,19 @@ Resources:
         -
           AttributeName: "file_key"
           AttributeType: "S"
-          
       KeySchema:
         -
           AttributeName: "file_key"
           KeyType: "HASH"
 
+  # API Gateway REST API
   APIGatewayRestApi:
     Type: "AWS::ApiGateway::RestApi"
     Properties:
       Name:
         Ref: ApiName
         
+  # API Gateway resource for file upload
   APIGatewayResourceUpload:
     Type: "AWS::ApiGateway::Resource"
     Properties:
@@ -140,6 +157,7 @@ Resources:
     DependsOn:
       - APIGatewayRestApi
 
+  # API Gateway method for file upload
   APIGatewayMethodUpload:
     Type: "AWS::ApiGateway::Method"
     Properties:
@@ -166,6 +184,7 @@ Resources:
     DependsOn:
       - APIGatewayResourceUpload
 
+  # OPTIONS method for file upload
   APIGatewayResourceUploadOptions:
     Type: "AWS::ApiGateway::Method"
     Properties:
@@ -194,6 +213,7 @@ Resources:
     DependsOn:
       - APIGatewayMethodUpload
 
+  # API Gateway resource for file download
   APIGatewayResourceDownload:
     Type: "AWS::ApiGateway::Resource"
     Properties:
@@ -206,6 +226,7 @@ Resources:
     DependsOn:
       - APIGatewayRestApi
       
+  # API Gateway method for file download
   APIGatewayMethodDownload:
     Type: "AWS::ApiGateway::Method"
     Properties:
@@ -232,6 +253,7 @@ Resources:
     DependsOn:
       - APIGatewayResourceDownload
 
+  # OPTIONS method for file download
   APIGatewayResourceDownloadOptions:
     Type: "AWS::ApiGateway::Method"
     Properties:
@@ -258,6 +280,7 @@ Resources:
     DependsOn:
       - APIGatewayMethodDownload
 
+  # API Gateway deployment
   APIGatewayDeployment:
     Type: "AWS::ApiGateway::Deployment"
     Properties:
@@ -268,6 +291,7 @@ Resources:
       - APIGatewayResourceUploadOptions
       - APIGatewayResourceDownloadOptions
 
+  # Lambda function for uploading the file
   LambdaFunctionUpload:
     Type: "AWS::Lambda::Function"
     Properties:
@@ -320,6 +344,7 @@ Resources:
     DependsOn:
       - APIGatewayRestApi
 
+  # Lambda function for downloading the file
   LambdaFunctionDownload:
     Type: "AWS::Lambda::Function"
     Properties:
@@ -406,6 +431,7 @@ Resources:
     DependsOn:
       - APIGatewayRestApi
 
+  # Lambda function for inserting records in DynamoDB when file is uploaded in S3
   LambdaFunctionInsertDB:
     Type: "AWS::Lambda::Function"
     Properties:
@@ -520,6 +546,7 @@ Resources:
     DependsOn:
       - APIGatewayRestApi
 
+  # Lambda function for deleting the file
   LambdaFunctionDelete:
     Type: "AWS::Lambda::Function"
     Properties:
@@ -594,6 +621,7 @@ Resources:
     DependsOn:
       - APIGatewayRestApi
 
+  # Permission for API Gateway to invoke the Lambda function for file upload
   APIGatewayPermissionUpload:
     Type: "AWS::Lambda::Permission"
     Properties:
@@ -603,6 +631,7 @@ Resources:
     DependsOn:
       - APIGatewayDeployment
 
+  # Permission for API Gateway to invoke the Lambda function for file download
   APIGatewayPermissionDownload:
     Type: "AWS::Lambda::Permission"
     Properties:
@@ -612,17 +641,19 @@ Resources:
     DependsOn:
       - APIGatewayDeployment
   
+  # Scheduler for deleting files from S3 buckets
   DeleteScheduler:
     Type: AWS::Scheduler::Schedule
     Properties:
       Name: 'share-fast-scheduler'
-      ScheduleExpression: 'rate(20 minute)'
+      ScheduleExpression: 'rate(20 minute)' # Schedule for every 20 minutes
       FlexibleTimeWindow:
         Mode: 'OFF'
       Target:
         Arn: !GetAtt LambdaFunctionDelete.Arn
         RoleArn: "arn:aws:iam::654654284682:role/LabRole"
 
+  # S3 Bucket for storing files
   Bucket:
     Type: AWS::S3::Bucket
     DependsOn:
@@ -643,9 +674,10 @@ Resources:
             MaxAge: 3000
       NotificationConfiguration:
         LambdaConfigurations:
-          - Event: s3:ObjectCreated:*
+          - Event: s3:ObjectCreated:* # Trigger Lambda function on object creation
             Function: !GetAtt LambdaFunctionInsertDB.Arn
   
+  # Permission for S3 bucket to invoke the Lambda function
   BucketPermissionAccess:
     Type: AWS::Lambda::Permission
     Properties:
@@ -655,6 +687,7 @@ Resources:
       SourceArn: !Sub 'arn:aws:s3:::${BucketName}'
       SourceAccount: !Ref AWS::AccountId
 
+  # Security Group allowing HTTPS access through port 3000
   InstanceSecurityGroupPort:
     Type: 'AWS::EC2::SecurityGroup'
     Properties: 
@@ -665,6 +698,7 @@ Resources:
           FromPort: 3000
           ToPort: 3000
   
+  # Security Group allowing SSH access through port 22
   InstanceSecurityGroupSSH:
     Type: 'AWS::EC2::SecurityGroup'
     Properties: 
@@ -675,6 +709,7 @@ Resources:
           FromPort: 22
           ToPort: 22
   
+  # Security Group allowing HTTP access through port 80
   InstanceSecurityGroupHTTP:
     Type: 'AWS::EC2::SecurityGroup'
     Properties: 
@@ -685,6 +720,7 @@ Resources:
           FromPort: 80
           ToPort: 80
 
+  # EC2 instance definition
   EC2Instance: 
     Type: AWS::EC2::Instance
     Properties:
@@ -716,6 +752,7 @@ Resources:
         - Key: Name
           Value: share-fast-application
  
+# Outputs after stack creation
 Outputs:
   ApplicationURL:
     Description: The URL of the deployed application
