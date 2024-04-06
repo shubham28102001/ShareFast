@@ -45,6 +45,7 @@ Parameters:
     Default: 'share-fast-db'
 
   # EC2 instance type
+  # Default is t2.small. Enter t2.micro, m1.large or m1.small.
   InstanceType:
     Description: Select instance type
     Type: String
@@ -54,7 +55,6 @@ Parameters:
         - t2.micro
         - m1.large
         - m1.small
-    Description: Default is t2.small. Enter t2.micro, m1.large or m1.small.
 
   # Name of existing Key Pair for EC2
   KeyName:
