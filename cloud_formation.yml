@@ -45,7 +45,6 @@ Parameters:
     Default: 'share-fast-db'
 
   # EC2 instance type
-  # Default is t2.small. Enter t2.micro, m1.large or m1.small.
   InstanceType:
     Description: Select instance type
     Type: String
