@@ -85,7 +85,7 @@ Resources:
           Mutable: true
       VerificationMessageTemplate:
         DefaultEmailOption: CONFIRM_WITH_LINK
-        EmailMessageByLink: 'Click the Verify Email link to verify your email address to Sign Up for Share Fast. {##Verify Email##}'
+        EmailMessageByLink: 'Click the Verify Email link to verify your email address to Sign Up for ShareFast. {##Verify Email##}'
 
   # Client for accessing the Cognito User Pool
   UserPoolClient:
@@ -95,7 +95,6 @@ Resources:
       AccessTokenValidity: 1
       SupportedIdentityProviders:
         - COGNITO
-      TokenValidityUnits: days
       TokenValidityUnits:
         AccessToken: days
 
