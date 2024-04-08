@@ -3,11 +3,11 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import reportWebVitals from './reportWebVitals';
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import Login from './Component/Login/Login.jsx';
-import SignUp from './Component/SignUp/SignUp.jsx';
-import FileUpload from './Component/FileUpload/FileUpload.jsx';
-import SuccessMessage from './Component/SuccessMessage/SuccessMessage.jsx';
-import FileDownload from './Component/FileDownload/FileDownload.jsx';
+import Login from './pages/Login/Login.jsx';
+import SignUp from './pages/SignUp/SignUp.jsx';
+import FileUpload from './pages/FileUpload/FileUpload.jsx';
+import SuccessMessage from './pages/SuccessMessage/SuccessMessage.jsx';
+import FileDownload from './pages/FileDownload/FileDownload.jsx';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
