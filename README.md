@@ -16,6 +16,10 @@
 
 The whole project is provisioned by AWS CloudFormation
 
+## Application Architecture
+![Application Architecture](https://github.com/shubham28102001/ShareFast/assets/72617204/177d2bd3-8f7c-4cd7-b6e4-c0698df3239a)
+
+
 ## Sources used for Code
 
 ### [src\pages\Login\Login.jsx](src\pages\Login\Login.jsx)
